@@ -175,7 +175,7 @@ ipcMain.handle('import-to-mkv', async (_, { sourcePath, mediaId }) => {
     return { success: true, mkvPath: sourcePath, url: pathToUrl(sourcePath), native: true }
   }
   return new Promise(resolve => {
-    execFile(ffmpegPath, ['-i', sourcePath, '-c', 'copy', '-y', mkvPath],
+    execFile(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-nostats', '-fflags', '+discardcorrupt', '-err_detect', 'ignore_err', '-i', sourcePath, '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2', '-y', mkvPath],
       { maxBuffer: 10 * 1024 * 1024 }, err => {
         if (err) resolve({ success: true, mkvPath: sourcePath, url: pathToUrl(sourcePath), native: true })
         else     resolve({ success: true, mkvPath, url: pathToUrl(mkvPath), native: false })
@@ -244,8 +244,8 @@ ipcMain.handle('export-video', async (_, { clips, outputPath }) => {
     send('export-progress', { step: clips.length + 1, total: clips.length + 1, msg: 'Concatenating…' })
     const concatArgs = ['-hide_banner', '-loglevel', 'error', '-nostats']
     segments.forEach(s => { concatArgs.push('-i', s) })
-    const vNorm = segments.map((_, idx) => `[${idx}:v:0]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${idx}]`).join(';')
-    const aNorm = segments.map((_, idx) => `[${idx}:a:0]aformat=sample_rates=44100:channel_layouts=stereo[a${idx}]`).join(';')
+    const vNorm = segments.map((_, idx) => `[${idx}:v:0]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=PTS-STARTPTS[v${idx}]`).join(';')
+    const aNorm = segments.map((_, idx) => `[${idx}:a:0]aformat=sample_rates=44100:channel_layouts=stereo,asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0[a${idx}]`).join(';')
     const inputs = segments.map((_, idx) => `[v${idx}][a${idx}]`).join('')
     const filter = `${vNorm};${aNorm};${inputs}concat=n=${segments.length}:v=1:a=1[v][a]`
     concatArgs.push('-filter_complex', filter,
