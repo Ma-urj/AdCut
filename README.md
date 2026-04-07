@@ -14,6 +14,16 @@ It is a desktop video editor built with Electron that combines professional non-
 
 ---
 
+## About the Demo
+
+This is a **v1 application**. The video generator panel exposes a curated set of well-known providers, but the model selection within each is intentionally limited to sensible defaults to keep setup friction low. The demo above was generated using **Kling 2.5 via Leonardo AI** as the image-to-video backend.
+
+Ad generation quality is directly proportional to two things you control: the **system prompt** (📝 Prompt) and the **video generation model** you choose. The built-in defaults are a reasonable starting point, but tuning the script-writer prompt for your specific product category and experimenting with different models will yield significantly better results. The clip shown in the demo required a few generation attempts before landing on one worth keeping — that is normal and expected at this stage.
+
+**Contributions are very welcome.** If you improve the default system prompt, add support for a new video provider, tighten the scene analysis pipeline, or fix something broken — open a PR. This project is meant to grow.
+
+---
+
 ## Table of Contents
 
 1. [Overview](#1-overview)
@@ -47,6 +57,24 @@ The editing side gives you everything you expect from an NLE: multi-track timeli
 - **Ad Generation** — extracts the last frame of any selected clip, uses a vision model to understand the setting and characters in the scene, writes a contextually appropriate ad script via LLM, generates a short video clip using the AI video service of your choice, synthesizes voice-over audio, merges everything, and drops the finished ad into your timeline in the right position — all in one click.
 
 All AI keys are BYOK (Bring Your Own Key). Nothing is hardcoded. Every provider — OpenAI, Leonardo AI, Runway, Google Veo, HuggingFace, Replicate — is configured through the app's own settings panels and stored locally in `~/.ve-settings.json`. Your keys never leave your machine except to call the respective API.
+
+### Why this matters
+
+Traditional video editing and ad integration is manual, time-consuming, and requires creative + technical expertise.
+
+AdCut automates this process by:
+- Identifying natural ad insertion points in video content
+- Generating scene-aware advertisements using AI
+- Seamlessly inserting them into timelines without manual editing
+
+This reduces the effort required to create monetizable content from hours to minutes.
+
+### Engineering Highlights
+
+- Built a multi-stage AI pipeline combining vision models, LLMs, and generative video systems
+- Designed a cross-language architecture (Electron + Python) with IPC and subprocess orchestration
+- Implemented real-time progress streaming between processes using stdout/stderr channels
+- Integrated multiple AI providers with a unified abstraction layer and BYOK configuration
 
 ---
 
