@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
 const path = require('path')
 const os   = require('os')
 const fs   = require('fs')
-const { execFile, execFileSync } = require('child_process')
+const { execFile, execFileSync, spawn } = require('child_process')
 
 // ── FFmpeg detection ──────────────────────────────────────────────────────────
 let ffmpegPath = null
@@ -13,6 +13,27 @@ try {
 } catch (_) {}
 if (!ffmpegPath) {
   try { ffmpegPath = require('ffmpeg-static') } catch (_) {}
+}
+function ffprobeFor(p) {
+  if (!p) return 'ffprobe'
+  if (/ffmpeg(\.exe)?$/i.test(p)) return p.replace(/ffmpeg(\.exe)?$/i, 'ffprobe$1')
+  return 'ffprobe'
+}
+function probeVideo(filePath, logPath) {
+  try {
+    const out = execFileSync(
+      ffprobeFor(ffmpegPath),
+      ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', filePath],
+      { encoding: 'utf8', timeout: 8000 }
+    ).trim()
+    const parts = out.split('x').map(n => parseInt(n, 10))
+    const width = parts[0] || 0
+    const height = parts[1] || 0
+    if (width > 0 && height > 0) return { width, height }
+  } catch (err) {
+    try { fs.appendFileSync(logPath, `\n[warn] ffprobe failed for ${filePath}: ${err.message}\n`, 'utf8') } catch (_) {}
+  }
+  return null
 }
 
 // ── Python detection ──────────────────────────────────────────────────────────
@@ -178,6 +199,17 @@ ipcMain.handle('export-video', async (_, { clips, outputPath }) => {
   const exportDir = path.join(exportTmpBase, `run-${Date.now()}`)
   fs.mkdirSync(exportDir, { recursive: true })
   const segments = []
+  let logPath = outputPath + '.export.log'
+  try {
+    fs.appendFileSync(logPath, `\n\n=== Export ${new Date().toISOString()} ===\nffmpeg: ${ffmpegPath}\noutput: ${outputPath}\n\n`, 'utf8')
+  } catch (_) {
+    logPath = path.join(os.tmpdir(), `ve-export-${Date.now()}.log`)
+    try { fs.appendFileSync(logPath, `\n\n=== Export ${new Date().toISOString()} ===\nffmpeg: ${ffmpegPath}\noutput: ${outputPath}\n\n`, 'utf8') } catch (_) {}
+  }
+  const base = probeVideo(clips[0]?.mkvPath, logPath)
+  const targetW = base?.width  || 1280
+  const targetH = base?.height || 720
+  try { fs.appendFileSync(logPath, `[info] target=${targetW}x${targetH}\n`, 'utf8') } catch (_) {}
 
   try {
     for (let i = 0; i < clips.length; i++) {
@@ -185,20 +217,43 @@ ipcMain.handle('export-video', async (_, { clips, outputPath }) => {
       const out = path.join(exportDir, `seg_${i}.mp4`)
       segments.push(out)
       send('export-progress', { step: i + 1, total: clips.length + 1, msg: `Encoding clip ${i + 1}/${clips.length}…` })
-      const args = ['-ss', String(sourceStart), '-t', String(Math.max(0.05, sourceDuration)), '-i', mkvPath,
-                    '-map', '0:v:0', '-map', '0:a:0?']
+      const args = ['-hide_banner', '-loglevel', 'error', '-nostats', '-fflags', '+discardcorrupt', '-err_detect', 'ignore_err',
+                    '-i', mkvPath, '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+                    '-ss', String(sourceStart), '-t', String(Math.max(0.05, sourceDuration)),
+                    '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:a:0']
       if (speed !== 1) {
         args.push('-vf', `setpts=${(1 / speed).toFixed(8)}*PTS`)
         args.push('-af', buildAtempo(speed))
       }
       args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
                 '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2', '-y', out)
-      await run(ffmpegPath, args)
+      try {
+        await run(ffmpegPath, args, logPath)
+      } catch (err) {
+        try { fs.appendFileSync(logPath, `\n[warn] clip ${i + 1}/${clips.length} failed with source audio; retrying with silent audio\n${err.message}\n`, 'utf8') } catch (_) {}
+        const args2 = args.slice()
+        for (let j = args2.length - 2; j >= 0; j--) {
+          if (args2[j] === '-map' && args2[j + 1] === '0:a:0?') { args2.splice(j, 2); break }
+        }
+        for (let j = args2.length - 2; j >= 0; j--) {
+          if (args2[j] === '-af') args2.splice(j, 2)
+        }
+        await run(ffmpegPath, args2, logPath)
+      }
     }
     send('export-progress', { step: clips.length + 1, total: clips.length + 1, msg: 'Concatenating…' })
-    const list = path.join(exportDir, 'list.txt')
-    fs.writeFileSync(list, segments.map(p => `file '${p.replace(/\\/g, '/')}'`).join('\n'), 'utf8')
-    await run(ffmpegPath, ['-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-y', outputPath])
+    const concatArgs = ['-hide_banner', '-loglevel', 'error', '-nostats']
+    segments.forEach(s => { concatArgs.push('-i', s) })
+    const vNorm = segments.map((_, idx) => `[${idx}:v:0]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${idx}]`).join(';')
+    const aNorm = segments.map((_, idx) => `[${idx}:a:0]aformat=sample_rates=44100:channel_layouts=stereo[a${idx}]`).join(';')
+    const inputs = segments.map((_, idx) => `[v${idx}][a${idx}]`).join('')
+    const filter = `${vNorm};${aNorm};${inputs}concat=n=${segments.length}:v=1:a=1[v][a]`
+    concatArgs.push('-filter_complex', filter,
+                    '-map', '[v]', '-map', '[a]',
+                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+                    '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2',
+                    '-movflags', '+faststart', '-y', outputPath)
+    await run(ffmpegPath, concatArgs, logPath)
     return { success: true }
   } catch (err) {
     return { success: false, error: err.message }
@@ -336,9 +391,22 @@ function sanitizeName(n) {
 function send(ch, data) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, data)
 }
-function run(bin, args) {
+function run(bin, args, logPath) {
   return new Promise((res, rej) => {
-    execFile(bin, args, { maxBuffer: 50 * 1024 * 1024 }, err => err ? rej(err) : res())
+    let tail = ''
+    const write = (s) => {
+      tail = (tail + s).slice(-20000)
+      if (!logPath) return
+      try { fs.appendFileSync(logPath, s, 'utf8') } catch (_) {}
+    }
+    if (logPath) {
+      try { fs.appendFileSync(logPath, `\n$ ${bin} ${args.join(' ')}\n`, 'utf8') } catch (_) {}
+    }
+    const proc = spawn(bin, args, { windowsHide: true })
+    proc.stdout?.on('data', d => write(d.toString()))
+    proc.stderr?.on('data', d => write(d.toString()))
+    proc.on('error', err => rej(err))
+    proc.on('close', code => code === 0 ? res() : rej(new Error(`FFmpeg failed (exit ${code})\n${tail}\nLog: ${logPath || '(none)'}`)))
   })
 }
 function buildAtempo(speed) {
