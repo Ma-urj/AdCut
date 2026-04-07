@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+
+# Project working copies (MKV remuxes) — large binary files
+**/working/*.mkv
+**/working/*.mp4
+**/working/*.avi
+**/working/*.mov
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp / export scratch dirs
+/tmp/
+ve-export-*/
+
+# User settings (contains API keys)
+~/.ve-settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor artifacts
+*.vep.bak

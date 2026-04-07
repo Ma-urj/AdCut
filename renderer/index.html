@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Video Editor</title>
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     PROJECT PICKER  (shown on startup, hidden once project is open)
+════════════════════════════════════════════════════════════════════ -->
+<div id="startup-screen">
+  <div id="startup-box">
+    <div id="startup-title">Video Editor</div>
+    <div id="startup-actions">
+      <button id="btn-new-project" class="startup-btn primary">+ New Project</button>
+      <button id="btn-open-project" class="startup-btn">Open Project…</button>
+    </div>
+    <div id="startup-recent">
+      <div class="recent-label">RECENT PROJECTS</div>
+      <div id="recent-list"><div class="hint">No recent projects</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     EDITOR  (hidden until a project is open)
+════════════════════════════════════════════════════════════════════ -->
+<div id="editor-screen" class="hidden">
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <span id="project-name-label"></span>
+    <div class="sep"></div>
+    <button id="btn-import">+ Import</button>
+    <div class="sep"></div>
+    <button id="btn-split"  title="Split at playhead  [S]">Split</button>
+    <button id="btn-delete" title="Delete selected  [Del]">Delete</button>
+    <button id="btn-ripple" title="Ripple delete  [Shift+Del]">Ripple Delete</button>
+    <div class="sep"></div>
+    <button id="btn-add-track">+ Track</button>
+    <div class="sep"></div>
+    <label>Speed:</label>
+    <select id="speed-select">
+      <option value="0.25">0.25×</option>
+      <option value="0.5">0.5×</option>
+      <option value="1" selected>1×</option>
+      <option value="1.5">1.5×</option>
+      <option value="2">2×</option>
+      <option value="4">4×</option>
+    </select>
+    <button id="btn-apply-speed">Apply</button>
+    <div class="sep"></div>
+    <button id="btn-zoom-out" title="Zoom out  [-]">−</button>
+    <button id="btn-zoom-in"  title="Zoom in  [+]">+</button>
+    <button id="btn-save" title="Save project  [Ctrl+S]">Save</button>
+    <button id="btn-export" class="primary">Export MP4</button>
+    <div class="sep"></div>
+    <button id="btn-video-gen"     title="Video Generator settings">🎬 Video Gen</button>
+    <button id="btn-system-prompt" title="Edit system prompt">📝 Prompt</button>
+    <button id="btn-settings"      title="Settings" style="margin-left:4px">⚙</button>
+  </div>
+
+  <!-- Main area -->
+  <div id="main">
+
+    <!-- Left panel: Media + Products tabs -->
+    <div id="left-panel">
+      <div id="left-tabs">
+        <button class="ltab active" data-tab="media">Media</button>
+        <button class="ltab" data-tab="products">Products</button>
+      </div>
+
+      <div id="tab-media" class="tab-content">
+        <div id="media-list"><div class="hint">Click Import to add videos</div></div>
+      </div>
+
+      <div id="tab-products" class="tab-content hidden">
+        <button id="btn-add-product" style="width:100%;margin-bottom:6px">+ Add Product</button>
+        <div id="products-list"><div class="hint">No products yet</div></div>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div id="preview">
+      <div id="preview-wrap">
+        <video id="video-el" preload="metadata"></video>
+        <div id="no-clip-msg">No clip at playhead</div>
+      </div>
+      <div id="preview-bar">
+        <button id="btn-prev-clip" title="Previous clip  [[]">⏮</button>
+        <button id="btn-play" title="Play / Pause  [Space]">▶</button>
+        <button id="btn-next-clip" title="Next clip  []]">⏭</button>
+        <div id="time-display">0:00.0 / 0:00.0</div>
+        <div id="clip-info"></div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- Timeline -->
+  <div id="timeline">
+    <div id="tl-left">
+      <div id="tl-corner"></div>
+      <div id="tl-labels"></div>
+    </div>
+    <div id="tl-right">
+      <div id="ruler-wrap"><canvas id="ruler"></canvas></div>
+      <div id="tl-tracks-scroll">
+        <div id="tl-tracks">
+          <div id="playhead-line"><div id="playhead-tip"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /editor-screen -->
+
+<!-- ══════════════════════════════════════════════════════════════════
+     RIGHT-CLICK CONTEXT MENU
+════════════════════════════════════════════════════════════════════ -->
+<div id="ctx-menu" class="hidden">
+  <div class="ctx-item" data-action="split">Split at playhead</div>
+  <div class="ctx-item" data-action="delete">Delete clip</div>
+  <div class="ctx-item" data-action="ripple">Ripple delete</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-sub">Set speed</div>
+  <div class="ctx-item ctx-indent" data-action="speed:0.25">0.25×</div>
+  <div class="ctx-item ctx-indent" data-action="speed:0.5">0.5×</div>
+  <div class="ctx-item ctx-indent" data-action="speed:1">1×</div>
+  <div class="ctx-item ctx-indent" data-action="speed:1.5">1.5×</div>
+  <div class="ctx-item ctx-indent" data-action="speed:2">2×</div>
+  <div class="ctx-item ctx-indent" data-action="speed:4">4×</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="analyze"      id="ctx-analyze">Analyze for Ad Placement</div>
+  <div class="ctx-item" data-action="generate-ad"  id="ctx-generate-ad">Generate Ad from Last Frame</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     MODALS
+════════════════════════════════════════════════════════════════════ -->
+
+<!-- New project name -->
+<div id="new-project-modal" class="overlay hidden">
+  <div class="modal-box" style="min-width:340px">
+    <div class="modal-title">New Project</div>
+    <label class="form-label">Project Name</label>
+    <input id="np-name" type="text" class="form-input" placeholder="My Video Project">
+    <label class="form-label">Folder</label>
+    <div style="display:flex;gap:6px">
+      <input id="np-folder" type="text" class="form-input" style="flex:1" readonly placeholder="Choose folder…">
+      <button id="np-browse">Browse</button>
+    </div>
+    <div class="modal-actions">
+      <button id="np-cancel">Cancel</button>
+      <button id="np-create" class="primary">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add product -->
+<div id="product-modal" class="overlay hidden">
+  <div class="modal-box" style="min-width:380px">
+    <div class="modal-title">Add Product</div>
+    <label class="form-label">Name *</label>
+    <input id="pm-name" class="form-input" placeholder="Coca-Cola">
+    <label class="form-label">Description *</label>
+    <textarea id="pm-desc" class="form-input" rows="2" placeholder="A refreshing ice-cold Coca-Cola…"></textarea>
+    <label class="form-label">Tone</label>
+    <input id="pm-tone" class="form-input" placeholder="casual, fun, refreshing">
+    <label class="form-label">Preferred Settings (comma-separated)</label>
+    <input id="pm-settings" class="form-input" placeholder="kitchen, cafe, restaurant">
+    <label class="form-label">Script (optional)</label>
+    <textarea id="pm-script" class="form-input" rows="2" placeholder="Nothing beats an ice-cold Coke!"></textarea>
+    <div class="modal-actions">
+      <button id="pm-cancel">Cancel</button>
+      <button id="pm-save" class="primary">Add Product</button>
+    </div>
+  </div>
+</div>
+
+<!-- Analyze: pick product -->
+<div id="analyze-modal" class="overlay hidden">
+  <div class="modal-box" style="min-width:340px">
+    <div class="modal-title">Analyze for Ad Placement</div>
+    <div style="font-size:11px;color:#666;margin-bottom:10px">Choose a product to find ideal insertion points in the selected clip.</div>
+    <div id="analyze-product-list"></div>
+    <div id="analyze-quality-row" style="display:flex;align-items:center;gap:8px;margin-top:10px">
+      <label class="form-label" style="margin:0">Analysis model:</label>
+      <select id="analyze-quality" style="flex:1">
+        <option value="draft">Local — Ollama (llava + llama3)</option>
+        <option value="openai">Cloud — OpenAI GPT-4o</option>
+      </select>
+    </div>
+    <div id="analyze-key-warn" style="display:none;font-size:11px;color:#e67e22;margin-top:6px">
+      ⚠ No OpenAI key saved. <a href="#" id="analyze-open-settings" style="color:#e67e22">Open Settings</a> to add one.
+    </div>
+    <div class="modal-actions">
+      <button id="analyze-cancel">Cancel</button>
+      <button id="analyze-run" class="primary">Analyze</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generate Ad: pick product -->
+<div id="gen-ad-modal" class="overlay hidden">
+  <div class="modal-box" style="min-width:340px">
+    <div class="modal-title">Generate Ad from Last Frame</div>
+    <div style="font-size:11px;color:#666;margin-bottom:10px">Extracts the last frame of the selected clip, analyses the people in it, writes a script, then generates a short ad video using your configured video generator.</div>
+    <div id="gen-ad-product-list"></div>
+    <div id="gen-ad-analysis-info" style="margin-top:10px;font-size:11px;color:#666;padding:6px 8px;background:#1e1e1e;border-radius:4px;border:1px solid #2a2a2a"></div>
+    <div class="modal-actions">
+      <button id="gen-ad-cancel">Cancel</button>
+      <button id="gen-ad-run" class="primary">Generate</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generate Ad progress -->
+<div id="gen-ad-overlay" class="overlay hidden">
+  <div class="overlay-box" style="min-width:380px">
+    <div class="overlay-title">Generating Ad…</div>
+    <div class="prog-wrap"><div id="gen-ad-prog" style="width:0%"></div></div>
+    <div id="gen-ad-step"  style="color:#888;font-size:12px;margin-bottom:6px">Starting…</div>
+    <div id="gen-ad-log"   style="color:#555;font-size:10px;max-height:100px;overflow-y:auto;text-align:left;font-family:monospace"></div>
+  </div>
+</div>
+
+<!-- Analysis progress -->
+<div id="analyze-overlay" class="overlay hidden">
+  <div class="overlay-box">
+    <div class="overlay-title">Analyzing…</div>
+    <div class="prog-wrap"><div id="analyze-prog" style="width:0%"></div></div>
+    <div id="analyze-msg" style="color:#666;font-size:11px;max-height:120px;overflow-y:auto;text-align:left;margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- Analysis results -->
+<div id="results-modal" class="overlay hidden">
+  <div class="modal-box" style="min-width:400px">
+    <div class="modal-title">Ad Placement Results</div>
+    <div id="results-list"></div>
+    <div class="modal-actions">
+      <button id="results-cancel">Dismiss</button>
+      <button id="results-apply" class="primary">Apply Splits</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings -->
+<div id="settings-modal" class="overlay hidden">
+  <div class="modal-box" style="min-width:400px">
+    <div class="modal-title">Settings</div>
+
+    <div class="settings-section">API Keys</div>
+    <label class="form-label">OpenAI API Key</label>
+    <div style="display:flex;gap:6px;align-items:center">
+      <input id="st-openai-key" type="password" class="form-input" style="flex:1" placeholder="sk-…">
+      <button id="st-toggle-key" style="flex-shrink:0">Show</button>
+    </div>
+    <div style="font-size:10px;color:#555;margin-top:3px">Used for GPT-4o quality analysis. Stored locally in ~/.ve-settings.json</div>
+
+    <div class="settings-section" style="margin-top:16px">Ollama (local LLM)</div>
+    <label class="form-label">Ollama Host URL</label>
+    <input id="st-ollama-url" type="text" class="form-input" placeholder="http://localhost:11434">
+    <div style="font-size:10px;color:#555;margin-top:3px">Leave blank to use default. Used for draft quality analysis.</div>
+
+    <div class="modal-actions">
+      <button id="st-cancel">Cancel</button>
+      <button id="st-save" class="primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import progress -->
+<div id="import-overlay" class="overlay hidden">
+  <div class="overlay-box">
+    <div class="overlay-title">Importing…</div>
+    <div class="prog-wrap"><div id="import-prog"></div></div>
+    <div id="import-msg" style="color:#666;font-size:11px">Converting to MKV working copy…</div>
+  </div>
+</div>
+
+<!-- Export progress -->
+<div id="export-overlay" class="overlay hidden">
+  <div class="overlay-box">
+    <div class="overlay-title">Exporting…</div>
+    <div class="prog-wrap"><div id="export-prog"></div></div>
+    <div id="export-msg" style="color:#666;font-size:11px">Starting…</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     VIDEO GENERATOR SETTINGS
+════════════════════════════════════════════════════════════════════ -->
+<div id="video-gen-modal" class="overlay hidden">
+  <div class="modal-box" style="min-width:480px">
+    <div class="modal-title">Video Generator</div>
+    <div style="font-size:11px;color:#666;margin-bottom:12px">
+      Choose which AI video service to use when generating ads. Each provider uses image-to-video to animate the last frame of your clip.
+    </div>
+
+    <label class="form-label">Provider</label>
+    <select id="vg-provider" class="form-input">
+      <option value="slideshow">Slideshow (no API key — static fallback)</option>
+      <option value="svd">Stable Video Diffusion (local GPU, no key)</option>
+      <option value="cogvideo">CogVideoX (local GPU, no key)</option>
+      <option value="huggingface">HuggingFace Inference (HF Token)</option>
+      <option value="replicate">Replicate (Replicate key)</option>
+      <option value="runway">Runway Gen-3 (Runway key)</option>
+      <option value="veo">Google Veo (Google API key)</option>
+      <option value="leonardo">Leonardo AI / Kling (Leonardo key)</option>
+    </select>
+
+    <label class="form-label" style="margin-top:10px">Model</label>
+    <input id="vg-model" type="text" class="form-input" placeholder="e.g. KLING2_5">
+    <div id="vg-model-hint" style="font-size:10px;color:#555;margin-top:3px"></div>
+
+    <div id="vg-key-row" style="margin-top:10px">
+      <label class="form-label">API Key</label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input id="vg-key" type="password" class="form-input" style="flex:1" placeholder="">
+        <button id="vg-toggle-key" style="flex-shrink:0">Show</button>
+      </div>
+      <div id="vg-key-label" style="font-size:10px;color:#555;margin-top:3px"></div>
+    </div>
+
+    <div class="settings-section" style="margin-top:14px">Provider Notes</div>
+    <div id="vg-notes" style="font-size:11px;color:#666;line-height:1.5"></div>
+
+    <div class="modal-actions">
+      <button id="vg-cancel">Cancel</button>
+      <button id="vg-save" class="primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SYSTEM PROMPT EDITOR
+════════════════════════════════════════════════════════════════════ -->
+<div id="system-prompt-modal" class="overlay hidden">
+  <div class="modal-box" style="min-width:540px">
+    <div class="modal-title">Script-Writer System Prompt</div>
+    <div style="font-size:11px;color:#666;margin-bottom:10px">
+      This prompt is sent to the LLM when writing the ad script. Use the placeholders exactly as shown — they are filled in from scene analysis and product data. Reset to restore the built-in default.
+    </div>
+    <div style="font-size:10px;color:#888;margin-bottom:6px;font-family:monospace">
+      {setting} {characters} {character_positions} {activity} {mood} {product_name} {product_description} {product_tone} {user_script_line} {min_duration} {max_duration}
+    </div>
+    <textarea id="sp-textarea" class="form-input" rows="18"
+      style="font-family:monospace;font-size:11px;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+    <div class="modal-actions">
+      <button id="sp-reset">Reset to Default</button>
+      <button id="sp-cancel">Cancel</button>
+      <button id="sp-save" class="primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="editor.js"></script>
+</body>
+</html>
